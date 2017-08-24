@@ -38,6 +38,15 @@ function play() {
     source.start(0);
 }
 
+const audioToByteString = (inputFile) => {
+  // TODO convert file object to bytestring
+  // then store bytestring
+  // hydrate audio
+  // pass
+  return []
+}
+
 export default {
-  play
+  audioToByteString,
+  play,
 }
