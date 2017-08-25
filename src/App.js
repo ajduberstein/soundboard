@@ -1,6 +1,11 @@
 import React, { Component } from 'react';
 import {Header, Grid, Input, Button} from 'semantic-ui-react';
-import audioToByteString from './audioHelpers';
+import {Player, audioToLocalStorage} from './AudioHelpers';
+
+// 5 MB limit in local storage
+const HARD_LIMIT = 5000000 
+const p = new Player()
+const MAX_KEYS = 6;
 
 const COLORS = [
   'red',
@@ -16,39 +21,35 @@ const COLORS = [
   'brown',
 ]
 
+const getInitMusic = (() => {
+  let arr = []
+  for (let i = 0; i < MAX_KEYS; i++) {
+     arr.push({
+      name: "",
+      key: i,
+      uploaded: false,
+      editable: false
+    })
+  }
+  return arr
+})
+
 const initBtnMsg = 'Click to add a sound'
 const initInputMsg = 'Upload audio and add a name'
 
 let colorIdx = 0
 
-const defaultState = {
-  new: true,
-  music: [
-    {
-      name: "",
-      key: 1,
-      audio: [],
-      editable: false,
-    },
-    {
-      name: "",
-      key: 2,
-      audio: [],
-      editable: false,
-    },
-    {
-      name: "",
-      key: 3,
-      audio: [],
-      editable: false,
-    }
-  ]
+const getDefaultState = () => {
+  return {
+    new: true,
+    music: getInitMusic(),
+  }
 }
 
 class App extends Component {
   constructor() {
     super()
-    this.state = defaultState;
+    this.state = getDefaultState();
     this.handleClick = this.handleClick.bind(this);
     this.handleHardReset = this.handleHardReset.bind(this);
     this.handleChange = this.handleChange.bind(this);
@@ -58,10 +59,10 @@ class App extends Component {
     e.preventDefault();
     let clickedBtn = key;
     for (let i = 0; i < this.state.music.length; i++) {
-      if (this.state.music[i].key === clickedBtn ) {
-        if (this.state.music[i].audio.length > 0) {
+      if (this.state.music[i].key === clickedBtn) {
+        if (this.state.music[i].uploaded && !this.state.music[i].editable) {
           // get audio
-          //
+          p.playByteArrayAtLocalStorageIndex(this.state.music[i].key)
         } else {
           // set audio
           let music = [...this.state.music];
@@ -77,9 +78,13 @@ class App extends Component {
     if(e.key === "Enter" || e.key === undefined) {
       for (let i = 0; i < this.state.music.length; i++) {
         if (this.state.music[i].editable) {
+          let isUserInput = e.target.value !== ""
           let music = [...this.state.music];
           music[i].name = e.target.value;
-          music[i].editable = false
+          music[i].editable = !isUserInput;
+          if (isUserInput) {
+            window.localStorage.setItem(i + "name", music[i].name)
+          }
           i = Infinity
           this.setState({music})
         }
@@ -88,28 +93,42 @@ class App extends Component {
   }
 
   handleHardReset(e) {
+    e.preventDefault();
     window.localStorage.clear();
-    this.setState(defaultState);
+    this.setState(getDefaultState());
   }
 
   componentDidMount() {
+    // Hydrate from a saved state
     if (!window.localStorage.length) {
       this.setState({new: true})
     } else {
-      this.setState({new: false})
+      let music = [...getInitMusic()]
+      for (let i = 0; i < MAX_KEYS; i++) {
+        if (window.localStorage.key(i)) {
+          music[i].name = window.localStorage.getItem(i + "name")
+          music[i].uploaded = true
+        }
+      }
+      this.setState({new: false, music: music})
     }
   }
 
   handleFileUpload(key, e) {
-    debugger;
     let uploadedFile = e.target.files[0];
     for (let i = 0; i < this.state.music.length; i++) {
       if (this.state.music[i].key === key) {
         let music = [...this.state.music];
-        music[i].audio = audioToByteString(uploadedFile)
-        // Close loop
-        i = Infinity
-        this.setState({music})
+        if (uploadedFile.size <= HARD_LIMIT) {
+          audioToLocalStorage(uploadedFile, key, () => {
+            music[i].uploaded = true
+            // Close loop
+            i = Infinity
+            this.setState({music})
+          })
+        } else {
+          alert("File must be less than 5 MB")
+        }
       }
     }
   }
@@ -129,7 +148,6 @@ class App extends Component {
                       key={x.key}
                       onClick={this.handleClick.bind(this, x.key)} style={{width: "100%"}}>
                       {x.name || initBtnMsg}</Button>
-              <audio key={"audio" + x.key} style={{display: "none"}} />
             </Grid.Column>
             </Grid.Row>
           )
