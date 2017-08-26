@@ -1,11 +1,14 @@
 import React, { Component } from 'react';
 import {Header, Grid, Input, Button} from 'semantic-ui-react';
-import {Player, audioToLocalStorage} from './AudioHelpers';
+import {stateFromURL, clearQueryStr, stateToURL} from './textHelpers';
+import Speech from 'speak-tts';
 
+let responsiveVoice;
+
+
+const TEXT_ONLY = true;
 // 5 MB limit in local storage
-const HARD_LIMIT = 5000000 
-const p = new Player()
-const MAX_KEYS = 6;
+const MAX_KEYS = 10;
 
 const COLORS = [
   'red',
@@ -25,9 +28,8 @@ const getInitMusic = (() => {
   let arr = []
   for (let i = 0; i < MAX_KEYS; i++) {
      arr.push({
-      name: "",
       key: i,
-      uploaded: false,
+      text: "",
       editable: false
     })
   }
@@ -35,14 +37,13 @@ const getInitMusic = (() => {
 })
 
 const initBtnMsg = 'Click to add a sound'
-const initInputMsg = 'Upload audio and add a name'
 
 let colorIdx = 0
 
 const getDefaultState = () => {
   return {
-    new: true,
     music: getInitMusic(),
+    name: 'Networking Soundboard'
   }
 }
 
@@ -60,11 +61,12 @@ class App extends Component {
     let clickedBtn = key;
     for (let i = 0; i < this.state.music.length; i++) {
       if (this.state.music[i].key === clickedBtn) {
-        if (this.state.music[i].uploaded && !this.state.music[i].editable) {
-          // get audio
-          p.playByteArrayAtLocalStorageIndex(this.state.music[i].key)
+        let mediumPresent = this.state.music[i].text
+        if (mediumPresent) {
+          Speech.speak({
+            text: this.state.music[i].text
+          })
         } else {
-          // set audio
           let music = [...this.state.music];
           music[i].editable = true
           i = Infinity;
@@ -76,16 +78,14 @@ class App extends Component {
 
   handleChange(e) {
     if(e.key === "Enter" || e.key === undefined) {
-      for (let i = 0; i < this.state.music.length; i++) {
+      for (let i = 0; i < MAX_KEYS; i++) {
         if (this.state.music[i].editable) {
           let isUserInput = e.target.value !== ""
           let music = [...this.state.music];
-          music[i].name = e.target.value;
+          music[i].text = e.target.value;
           music[i].editable = !isUserInput;
-          if (isUserInput) {
-            window.localStorage.setItem(i + "name", music[i].name)
-          }
           i = Infinity
+          stateToURL(this.state.music)
           this.setState({music})
         }
       }
@@ -94,50 +94,23 @@ class App extends Component {
 
   handleHardReset(e) {
     e.preventDefault();
-    window.localStorage.clear();
+    clearQueryStr()
     this.setState(getDefaultState());
   }
 
   componentDidMount() {
-    // Hydrate from a saved state
-    if (!window.localStorage.length) {
-      this.setState({new: true})
-    } else {
-      let music = [...getInitMusic()]
-      for (let i = 0; i < MAX_KEYS; i++) {
-        if (window.localStorage.key(i)) {
-          music[i].name = window.localStorage.getItem(i + "name")
-          music[i].uploaded = true
-        }
-      }
-      this.setState({new: false, music: music})
-    }
-  }
+    let music = stateFromURL(getInitMusic())
+    let ds = getDefaultState()
+    if (music) ds.music = music
 
-  handleFileUpload(key, e) {
-    let uploadedFile = e.target.files[0];
-    for (let i = 0; i < this.state.music.length; i++) {
-      if (this.state.music[i].key === key) {
-        let music = [...this.state.music];
-        if (uploadedFile.size <= HARD_LIMIT) {
-          audioToLocalStorage(uploadedFile, key, () => {
-            music[i].uploaded = true
-            // Close loop
-            i = Infinity
-            this.setState({music})
-          })
-        } else {
-          alert("File must be less than 5 MB")
-        }
-      }
-    }
+    Speech.init({
+      lang: 'en-US',
+    });
+
+    this.setState(ds)
   }
 
   render() {
-    let newbieMsg = null
-    if (this.state.new) {
-      newbieMsg = (<p>Click the buttons to upload a short sound</p>)
-    }
     let buttons = this.state.music.map((x) => {
       if (!x.editable) {
           colorIdx++;
@@ -147,7 +120,7 @@ class App extends Component {
               <Button color={COLORS[colorIdx % COLORS.length]}
                       key={x.key}
                       onClick={this.handleClick.bind(this, x.key)} style={{width: "100%"}}>
-                      {x.name || initBtnMsg}</Button>
+                      {x.text || initBtnMsg}</Button>
             </Grid.Column>
             </Grid.Row>
           )
@@ -155,9 +128,8 @@ class App extends Component {
         return (
           <Grid.Row>
           <Grid.Column>
-          <Input type="file" accept=".mp3,audio/*" onChange={this.handleFileUpload.bind(this, x.key)} />
           <Input
-            key={x.key} placeholder={x.name || initInputMsg} onKeyPress={this.handleChange} onBlur={this.handleChange} style={{width: "100%"}}/>
+            key={x.key} placeholder={x.text} onKeyPress={this.handleChange} onBlur={this.handleChange} style={{width: "100%"}}/>
           </Grid.Column>
           </Grid.Row>
         )
@@ -165,15 +137,16 @@ class App extends Component {
     })
     return (
       <div style={{margin: 10}}>
-        <Header as="h1">uSoundboard</Header>
-        {newbieMsg}
+        <Header as="h1">{this.state.name}</Header>
         <Grid style={{width: "100%"}}>
           {buttons}
         </Grid>
-        <div style={{position: "absolute", bottom: 0, width: "100%"}}>
-          <Button size="small" onClick={this.handleHardReset}>Clear all sounds</Button>
-          <p> Lovingly crafted by <a href="http://duberste.in">duber</a> </p>
+        <Grid>
+        <div style={{width: "100%"}}>
+          <Button size="small" onClick={this.handleHardReset}>Clear all</Button>
         </div>
+          <p> Lovingly crafted by <a href="http://duberste.in">duber</a> </p>
+        </Grid>
       </div>
     );
   }
